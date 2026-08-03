@@ -1,0 +1,52 @@
+/*
+ * MAKT design tokens.
+ *
+ * Single source of truth for the visual language. Nothing warm belongs here —
+ * every hue is a cold slate. Colour in this design comes from the product
+ * photography alone, never from the chrome around it.
+ */
+
+:root {
+  /* ── Palette ─────────────────────────────────────────────── */
+  --bg-deep: #4e5f6e; /* outermost page, visible behind the inset frame */
+  --bg: #6e8393; /* primary slate, inside the frame */
+  --panel: #7e93a3; /* cards and blocks */
+  --panel-hi: #8da1b0; /* hover, and any block that must read lighter */
+  --ink: #f2f5f7; /* primary text */
+  --ink-muted: #c4d0d9; /* secondary text, labels, utility copy */
+  --line: rgba(242, 245, 247, 0.18); /* hairline rules */
+  --accent: #e4edf2; /* cold silver — CTA and emphasis only */
+
+  /* ── Layout ──────────────────────────────────────────────── */
+  --frame-inset: 16px; /* the inset gutter; desktop overrides below */
+  --radius: 4px; /* near-sharp corners, never rounder than this */
+  --gutter: 16px; /* 12-column grid gutter */
+
+  /* ── Motion ──────────────────────────────────────────────── */
+  /* Blur is the most expensive part of the crossfade. `--act-blur-max` is
+   * dialled down (and zeroed on touch/small screens) so the transition stays
+   * composited rather than forcing a full-surface repaint every frame. */
+  --act-blur-max: 8px;
+  --act-scale-max: 1.06;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --frame-inset: 32px;
+  }
+}
+
+/* Blur across a full viewport costs far more than it is worth on phones.
+ * Opacity and scale alone still read as a clean crossfade. */
+@media (max-width: 767px), (pointer: coarse) {
+  :root {
+    --act-blur-max: 0px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --act-blur-max: 0px;
+    --act-scale-max: 1;
+  }
+}

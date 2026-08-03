@@ -1,0 +1,114 @@
+@import "tailwindcss";
+@import "../styles/tokens.css";
+
+/*
+ * Tailwind v4 is configured in CSS, not a JS config file. `@theme inline`
+ * republishes the tokens from tokens.css as Tailwind utilities, so
+ * `bg-panel`, `text-ink-muted`, `border-line` etc. all resolve to the same
+ * custom properties the raw CSS uses. One source of truth, two access paths.
+ */
+@theme inline {
+  --color-bg-deep: var(--bg-deep);
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-hi: var(--panel-hi);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+
+  --font-display: var(--font-estedad), system-ui, sans-serif;
+  --font-sans: var(--font-vazirmatn), system-ui, sans-serif;
+
+  --radius-sharp: var(--radius);
+}
+
+@layer base {
+  html {
+    /* Lenis drives scrolling itself; native smooth behaviour would fight it. */
+    scroll-behavior: auto;
+    background-color: var(--bg-deep);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    /* The content field is the mid slate; `--bg-deep` is painted around the
+     * inset frame by FrameOverlay's spread shadow, not by the body. */
+    background-color: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-vazirmatn), system-ui, sans-serif;
+    font-weight: 400;
+    /* The three acts are driven by scroll position. Overscroll bounce on iOS
+     * reports positions outside [0,1] and makes the crossfade flicker at the
+     * extremes, so it is contained rather than left to the platform. */
+    overscroll-behavior-y: none;
+  }
+
+  /* Latin runs (product codes, English names) must not be reflowed by the RTL
+   * base direction. Pair this with dir="ltr" on the element itself. */
+  [dir="ltr"] {
+    unicode-bidi: isolate;
+  }
+
+  ::selection {
+    background-color: var(--accent);
+    color: var(--bg-deep);
+  }
+
+  /* A single, unmistakable focus ring for keyboard users. The design is low
+   * contrast by nature, so the ring uses the accent silver at full strength. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  button,
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@layer components {
+  /*
+   * Display type: compressed, very heavy, tight tracking, sub-1 line height.
+   * Headlines are hand-broken across lines, so the leading has to be tight
+   * enough that a three-line headline still reads as one mass.
+   */
+  .type-display {
+    font-family: var(--font-estedad), system-ui, sans-serif;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    line-height: 0.9;
+  }
+
+  /*
+   * Utility micro-copy — the bracketed labels that are this design's visual
+   * signature. Tiny, wide-tracked, always muted.
+   */
+  .type-utility {
+    font-family: var(--font-vazirmatn), system-ui, sans-serif;
+    font-size: 10px;
+    line-height: 1.6;
+    letter-spacing: 0.14em;
+    color: var(--ink-muted);
+  }
+
+  @media (min-width: 768px) {
+    .type-utility {
+      font-size: 11px;
+    }
+  }
+
+  /* Hairline rules used as section separators throughout. */
+  .rule {
+    border-color: var(--line);
+  }
+}
+
+@layer utilities {
+  /* Directional icons must mirror under RTL. Applied to the CTA arrow. */
+  [dir="rtl"] .rtl-mirror {
+    transform: scaleX(-1);
+  }
+}
