@@ -72,6 +72,59 @@ export interface SiteSettings {
   logo_url: string | null;
   socials: { label: string; href: string }[];
   footer_note: string;
-  /** Flat shipping fee in Toman. Wired up in phase 5. */
+  /** Flat shipping fee in Toman. */
   shipping_flat_price: number;
+}
+
+export type OrderStatus = "pending" | "paid" | "failed" | "canceled";
+
+/**
+ * A line in an order.
+ *
+ * Prices are copied in at checkout rather than joined from `products` at read
+ * time: an order is a record of what was actually agreed, and must not change
+ * when the product is later re-priced.
+ */
+export interface OrderItem {
+  product_id: string;
+  slug: string;
+  name_fa: string;
+  /** Unit price in Toman at the moment the order was placed. */
+  price: number;
+  quantity: number;
+  color_hex: string | null;
+  color_name_fa: string | null;
+}
+
+export interface OrderCustomer {
+  name: string;
+  phone: string;
+  address: string;
+  postal_code: string;
+  note?: string;
+}
+
+export interface Order {
+  id: string;
+  /** Human-facing reference shown to the customer, e.g. "MK-4A7X2Q". */
+  order_no: string;
+  items: OrderItem[];
+  subtotal: number;
+  shipping: number;
+  total: number;
+  customer: OrderCustomer;
+  /** Gateway transaction handle; set once the payment request succeeds. */
+  authority: string | null;
+  /** Gateway reference number, set only after a successful verification. */
+  ref_id: string | null;
+  status: OrderStatus;
+  created_at: string;
+  paid_at: string | null;
+}
+
+export interface Profile {
+  id: string;
+  email: string | null;
+  role: "customer" | "admin";
+  created_at: string;
 }

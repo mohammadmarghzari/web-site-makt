@@ -7,7 +7,17 @@ import { SmoothScroll } from "@/components/scroll/SmoothScroll";
 import { Bracket } from "@/components/ui/Bracket";
 import { Footer } from "@/components/ui/Footer";
 import { FrameOverlay } from "@/components/ui/FrameOverlay";
-import { catalogueProducts, sampleScenes, sampleSettings } from "@/lib/data/sample";
+import { CartButton } from "@/components/cart/CartButton";
+import { getPublishedProducts } from "@/lib/repo/products";
+import { getAllScenes } from "@/lib/repo/scenes";
+import { getSettings } from "@/lib/repo/settings";
+
+/*
+ * Revalidated rather than fully static: the catalogue comes from the database
+ * once it is configured, and the admin panel calls revalidatePath on every
+ * change, so edits appear immediately without a query on every visit.
+ */
+export const revalidate = 60;
 
 /*
  * The three acts.
@@ -20,15 +30,22 @@ import { catalogueProducts, sampleScenes, sampleSettings } from "@/lib/data/samp
 const ACT1_LENGTH = 4;
 const ACT3_LENGTH = 3;
 
-export default function HomePage() {
+export default async function HomePage() {
+  const [products, scenes, settings] = await Promise.all([
+    getPublishedProducts(),
+    getAllScenes(),
+    getSettings(),
+  ]);
+
   return (
     <>
       <FrameOverlay />
+      <CartButton />
 
       <SmoothScroll>
         <ScrollStage>
           <StickyAct index={0} id="act-1" length={ACT1_LENGTH}>
-            <Act1Hero scene={sampleScenes.act1} products={catalogueProducts} />
+            <Act1Hero scene={scenes.act1} products={products} />
           </StickyAct>
 
           <FlowAct index={1} id="act-2">
@@ -43,7 +60,7 @@ export default function HomePage() {
               before act 3.
             */}
             <div className="flex min-h-[300dvh] flex-col justify-start gap-20 px-4 pt-[8dvh] sm:px-8 md:pe-24">
-              <ProductGrid products={catalogueProducts} />
+              <ProductGrid products={products} />
 
               <div className="flex flex-wrap items-end justify-between gap-6 border-t border-line pt-8">
                 <div className="max-w-sm">
@@ -61,7 +78,7 @@ export default function HomePage() {
           </FlowAct>
 
           <StickyAct index={2} id="act-3" length={ACT3_LENGTH}>
-            <Act3Hero scene={sampleScenes.act3} />
+            <Act3Hero scene={scenes.act3} />
           </StickyAct>
 
           <ProgressRail />
@@ -69,7 +86,7 @@ export default function HomePage() {
       </SmoothScroll>
 
       <div className="relative z-10 bg-bg px-4 sm:px-8">
-        <Footer settings={sampleSettings} />
+        <Footer settings={settings} />
       </div>
     </>
   );

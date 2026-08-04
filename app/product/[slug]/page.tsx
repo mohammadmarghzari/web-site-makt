@@ -1,27 +1,22 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { catalogueProducts, sampleProducts, sampleSettings } from "@/lib/data/sample";
+import { getProductBySlug, getPublishedProducts } from "@/lib/repo/products";
+import { getSettings } from "@/lib/repo/settings";
 import { discountPercent, formatToman, toFa } from "@/lib/format";
-import { FigurePlaceholder } from "@/components/product/FigurePlaceholder";
-import { ColorSwatchRow } from "@/components/product/ColorSwatch";
+import { ProductGallery } from "@/components/product/ProductGallery";
+import { ProductBuyPanel } from "@/components/product/ProductBuyPanel";
+import { ProductCard } from "@/components/product/ProductCard";
 import { Bracket } from "@/components/ui/Bracket";
-import { ButtonLink } from "@/components/ui/Button";
 import { Footer } from "@/components/ui/Footer";
 import { FrameOverlay } from "@/components/ui/FrameOverlay";
+import { CartButton } from "@/components/cart/CartButton";
 
-/*
- * Product detail.
- *
- * Minimal on purpose: this is a phase-3 surface, brought forward only because
- * the Act 1 buy CTA and every catalogue card point here, and shipping the
- * homepage with links to a 404 would be worse than a plain page. It reads the
- * same sample data as the homepage, so phase 3 swaps its source alongside
- * everything else. Add-to-cart lands in phase 5.
- */
+export const revalidate = 60;
 
-export function generateStaticParams() {
-  return catalogueProducts.map((product) => ({ slug: product.slug }));
+export async function generateStaticParams() {
+  const products = await getPublishedProducts();
+  return products.map((product) => ({ slug: product.slug }));
 }
 
 export async function generateMetadata({
@@ -30,22 +25,32 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const product = sampleProducts.find((p) => p.slug === slug);
+  const product = await getProductBySlug(slug);
   if (!product) return { title: "محصول یافت نشد" };
+
   return {
     title: product.name_fa,
-    description: product.description_fa,
-    openGraph: { title: `${product.name_fa} | MAKT`, description: product.tagline_fa },
+    description: product.description_fa || product.tagline_fa,
+    openGraph: {
+      title: `${product.name_fa} | MAKT`,
+      description: product.tagline_fa,
+      type: "website",
+      images: product.images[0] ? [{ url: product.images[0] }] : undefined,
+    },
   };
 }
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const product = sampleProducts.find((p) => p.slug === slug);
-  if (!product || product.status === "draft") notFound();
+  const [product, settings, all] = await Promise.all([
+    getProductBySlug(slug),
+    getSettings(),
+    getPublishedProducts(),
+  ]);
+  if (!product) notFound();
 
-  const soldOut = product.status === "sold_out" || product.stock === 0;
   const discount = discountPercent(product.price, product.compare_price);
+  const related = all.filter((p) => p.id !== product.id).slice(0, 4);
 
   const specs: { label: string; value: string; ltr?: boolean }[] = [
     { label: "مقیاس", value: product.scale, ltr: true },
@@ -56,40 +61,72 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
       : []),
   ];
 
+  /*
+   * Product structured data. Emitted server-side so crawlers see it in the
+   * initial HTML. Availability and price must mirror what the page shows —
+   * a mismatch is worse than omitting the markup entirely.
+   */
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: product.name_fa,
+    alternateName: product.name_en || undefined,
+    description: product.description_fa || product.tagline_fa,
+    sku: product.slug,
+    image: product.images.length > 0 ? product.images : undefined,
+    brand: { "@type": "Brand", name: settings.brand_name },
+    offers: {
+      "@type": "Offer",
+      // Prices are stored and displayed in Toman, but Toman has no ISO 4217
+      // code — only Rial (IRR) does. Publishing the Toman figure under IRR
+      // would understate every price tenfold to any consumer of this markup,
+      // so it is converted here.
+      price: product.price * 10,
+      priceCurrency: "IRR",
+      availability:
+        product.status === "sold_out" || product.stock === 0
+          ? "https://schema.org/OutOfStock"
+          : "https://schema.org/InStock",
+    },
+  };
+
   return (
     <>
       <FrameOverlay />
+      <CartButton />
+
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
 
       <main className="relative z-10 min-h-[100dvh] px-4 py-10 sm:px-8">
-        <nav className="mb-8">
+        <nav className="mb-8 flex items-center justify-between gap-4">
           <Link href="/" className="type-utility transition-colors hover:!text-accent">
             ← بازگشت به خانه
           </Link>
+          <Bracket>فیگور</Bracket>
         </nav>
 
         <div className="grid gap-10 lg:grid-cols-2 lg:gap-16">
-          <div
-            className="relative flex aspect-[4/5] items-center justify-center bg-panel p-10"
-            style={{ borderRadius: "var(--radius)" }}
-          >
-            <FigurePlaceholder seed={product.slug} className="h-full w-auto" />
-            {soldOut && (
-              <span className="type-utility absolute top-3 bg-bg-deep/80 px-2 py-1 !text-ink" style={{ insetInlineStart: "0.75rem" }}>
-                ناموجود
-              </span>
-            )}
-          </div>
+          <ProductGallery product={product} discount={discount} />
 
           <div>
-            <Bracket>فیگور</Bracket>
-            <h1 className="type-display mt-4 text-5xl sm:text-6xl">{product.name_fa}</h1>
-            <p className="type-utility mt-2" dir="ltr">
-              {product.name_en}
-            </p>
+            <h1 className="type-display text-5xl sm:text-6xl">{product.name_fa}</h1>
+            {product.name_en && (
+              <p className="type-utility mt-2" dir="ltr">
+                {product.name_en}
+              </p>
+            )}
+            {product.tagline_fa && (
+              <p className="mt-4 text-sm text-ink-muted">{product.tagline_fa}</p>
+            )}
 
-            <p className="mt-6 max-w-prose text-sm leading-loose text-ink-muted">
-              {product.description_fa}
-            </p>
+            {product.description_fa && (
+              <p className="mt-6 max-w-prose text-sm leading-loose text-ink-muted">
+                {product.description_fa}
+              </p>
+            )}
 
             <dl className="mt-8 grid grid-cols-2 gap-y-3 border-t border-line pt-6">
               {specs.map((spec) => (
@@ -118,39 +155,26 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               </div>
             )}
 
-            {product.colors.length > 0 && (
-              <div className="mt-6 border-t border-line pt-6">
-                <Bracket className="mb-3 block">رنگ‌ها</Bracket>
-                <ColorSwatchRow colors={product.colors} />
-              </div>
-            )}
-
-            <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t border-line pt-6">
-              <div>
-                {discount !== null && product.compare_price && (
-                  <div className="type-utility line-through opacity-60">
-                    {toFa(product.compare_price)}
-                  </div>
-                )}
-                <div className={`text-lg ${soldOut ? "text-ink-muted line-through" : "text-ink"}`}>
-                  {formatToman(product.price)}
-                </div>
-              </div>
-
-              {/* Cart arrives in phase 5; until then this is an enquiry route
-                  rather than a dead button. */}
-              {soldOut ? (
-                <span className="type-utility">فعلاً موجود نیست</span>
-              ) : (
-                <ButtonLink href={sampleSettings.socials[0]?.href ?? "/"}>سفارش</ButtonLink>
-              )}
-            </div>
+            <ProductBuyPanel product={product} />
           </div>
         </div>
+
+        {related.length > 0 && (
+          <section className="mt-20 border-t border-line pt-10">
+            <Bracket>فیگورهای دیگر</Bracket>
+            <ul className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+              {related.map((item) => (
+                <li key={item.id}>
+                  <ProductCard product={item} />
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </main>
 
       <div className="relative z-10 px-4 sm:px-8">
-        <Footer settings={sampleSettings} />
+        <Footer settings={settings} />
       </div>
     </>
   );
