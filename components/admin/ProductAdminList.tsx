@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import type { Product } from "@/lib/types";
-import { reorderProducts } from "@/app/admin/actions";
+import { reorderProducts } from "@/lib/admin/mutations";
 import { FigurePlaceholder } from "@/components/product/FigurePlaceholder";
 import { inputClass } from "@/components/ui/Field";
 import { formatToman, toFa } from "@/lib/format";
@@ -142,7 +142,7 @@ export function ProductAdminList({ products }: { products: Product[] }) {
 
                 <div className="min-w-0 flex-1">
                   <Link
-                    href={`/admin/products/${product.id}`}
+                    href={`/admin/products/edit?id=${product.id}`}
                     className="type-utility !text-ink hover:!text-accent"
                   >
                     {product.name_fa}

@@ -1,10 +1,10 @@
-import { createClient } from "@/lib/supabase/server";
+import { createStaticClient } from "@/lib/supabase/static";
 import { sampleScenes } from "@/lib/data/sample";
 import type { HeroScene, SceneKey } from "@/lib/types";
 
 /** Hero scene for one act, falling back to the bundled copy. */
 export async function getScene(key: SceneKey): Promise<HeroScene> {
-  const supabase = await createClient();
+  const supabase = createStaticClient();
   if (!supabase) return sampleScenes[key];
 
   const { data, error } = await supabase

@@ -12,7 +12,6 @@ import { Footer } from "@/components/ui/Footer";
 import { FrameOverlay } from "@/components/ui/FrameOverlay";
 import { CartButton } from "@/components/cart/CartButton";
 
-export const revalidate = 60;
 
 export async function generateStaticParams() {
   const products = await getPublishedProducts();

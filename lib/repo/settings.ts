@@ -1,10 +1,10 @@
-import { createClient } from "@/lib/supabase/server";
+import { createStaticClient } from "@/lib/supabase/static";
 import { sampleSettings } from "@/lib/data/sample";
 import type { SiteSettings } from "@/lib/types";
 
 /** Site-wide settings, falling back to the bundled defaults. */
 export async function getSettings(): Promise<SiteSettings> {
-  const supabase = await createClient();
+  const supabase = createStaticClient();
   if (!supabase) return sampleSettings;
 
   const { data, error } = await supabase

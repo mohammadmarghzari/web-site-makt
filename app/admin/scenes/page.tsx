@@ -2,7 +2,6 @@ import { getAllScenes } from "@/lib/repo/scenes";
 import { SceneEditor } from "@/components/admin/SceneEditor";
 import { Bracket } from "@/components/ui/Bracket";
 
-export const dynamic = "force-dynamic";
 
 export default async function AdminScenesPage() {
   const scenes = await getAllScenes();

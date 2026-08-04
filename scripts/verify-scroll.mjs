@@ -16,7 +16,7 @@
 import { chromium } from "playwright-core";
 import { mkdir, rm } from "node:fs/promises";
 
-const BASE_URL = process.argv[2] ?? "http://127.0.0.1:3000";
+const BASE_URL = (process.argv[2] ?? "http://127.0.0.1:3000").replace(/\/$/, "");
 const OUT_DIR = ".verify";
 const EXECUTABLE = "/opt/pw-browsers/chromium";
 

@@ -1,6 +1,8 @@
+export const dynamic = "force-static";
+
 import type { MetadataRoute } from "next";
 import { getPublishedProducts } from "@/lib/repo/products";
-import { getSiteUrl } from "@/lib/payment";
+import { getSiteUrl } from "@/lib/site";
 
 /*
  * Sitemap.

@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createStaticClient } from "@/lib/supabase/static";
 import { catalogueProducts, featuredProduct, sampleProducts } from "@/lib/data/sample";
 import type { Product } from "@/lib/types";
 
@@ -19,7 +19,7 @@ const PUBLIC_COLUMNS =
   "id, slug, name_fa, name_en, tagline_fa, description_fa, price, compare_price, images, colors, scale, height_cm, material, articulation, accessories, stock, status, is_featured, sort_order, created_at";
 
 export async function getPublishedProducts(): Promise<Product[]> {
-  const supabase = await createClient();
+  const supabase = createStaticClient();
   if (!supabase) return catalogueProducts;
 
   const { data, error } = await supabase
@@ -33,7 +33,7 @@ export async function getPublishedProducts(): Promise<Product[]> {
 }
 
 export async function getProductBySlug(slug: string): Promise<Product | null> {
-  const supabase = await createClient();
+  const supabase = createStaticClient();
   if (!supabase) {
     return sampleProducts.find((p) => p.slug === slug && p.status !== "draft") ?? null;
   }
@@ -50,7 +50,7 @@ export async function getProductBySlug(slug: string): Promise<Product | null> {
 }
 
 export async function getFeaturedProduct(): Promise<Product | null> {
-  const supabase = await createClient();
+  const supabase = createStaticClient();
   if (!supabase) return featuredProduct;
 
   const { data } = await supabase
@@ -78,7 +78,7 @@ export async function getFeaturedProduct(): Promise<Product | null> {
  */
 export async function getProductsByIds(ids: string[]): Promise<Product[]> {
   if (ids.length === 0) return [];
-  const supabase = await createClient();
+  const supabase = createStaticClient();
   if (!supabase) return sampleProducts.filter((p) => ids.includes(p.id));
 
   const { data, error } = await supabase

@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Product, ProductColor } from "@/lib/types";
-import { deleteProduct, saveProduct } from "@/app/admin/actions";
+import { deleteProduct, saveProduct } from "@/lib/admin/mutations";
 import { ImageUploader } from "./ImageUploader";
 import { Field, inputClass } from "@/components/ui/Field";
 import { Bracket } from "@/components/ui/Bracket";

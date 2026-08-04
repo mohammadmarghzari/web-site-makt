@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useCart } from "@/lib/cart/CartProvider";
-import { submitCheckout } from "@/app/checkout/actions";
+import { placeOrder } from "@/lib/orders/client";
+import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { customerSchema } from "@/lib/validators";
 import { Field, inputClass } from "@/components/ui/Field";
 import { Bracket } from "@/components/ui/Bracket";
@@ -13,21 +14,18 @@ import { formatToman, toFa } from "@/lib/format";
 /*
  * Guest checkout form.
  *
- * Validated with the same Zod schema the server action uses, so the two can
- * never drift apart. Client validation here is only to give fast feedback —
- * the server revalidates and re-prices regardless.
+ * On a static host there is no server to submit to, so the order goes straight
+ * to Postgres through the `place_order` function. The validation here is for
+ * fast feedback only — that function re-validates every field and, crucially,
+ * recomputes every amount from the products table. Nothing this form calculates
+ * is trusted.
  */
 
 const FIELDS = ["name", "phone", "address", "postal_code"] as const;
 type FieldName = (typeof FIELDS)[number];
 
-export function CheckoutForm({
-  shippingFlatPrice,
-  mockPayment,
-}: {
-  shippingFlatPrice: number;
-  mockPayment: boolean;
-}) {
+export function CheckoutForm({ shippingFlatPrice }: { shippingFlatPrice: number }) {
+  const storeReady = isSupabaseConfigured();
   const { lines, subtotal, hydrated, clear } = useCart();
   const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -82,26 +80,33 @@ export function CheckoutForm({
     setErrors({});
 
     startTransition(async () => {
-      const result = await submitCheckout({
-        customer: parsed.data,
-        lines: lines.map((l) => ({
+      const result = await placeOrder(
+        lines.map((l) => ({
           product_id: l.product_id,
           quantity: l.quantity,
           color_hex: l.color_hex,
         })),
-      });
+        parsed.data,
+      );
 
       if (!result.ok) {
         setFormError(result.error);
-        setProblems(result.problems ?? []);
+        setProblems([]);
         return;
       }
 
-      // The order is recorded server-side, so the basket has done its job.
-      // Clearing before the redirect avoids a stale cart if the customer
-      // navigates back from the gateway.
+      // The receipt page is static and has no way to look an order up, so the
+      // confirmed figures are handed to it directly. sessionStorage rather
+      // than the URL: an order number in a shareable link invites tampering,
+      // and these values came from the database, not from this form.
+      try {
+        sessionStorage.setItem("makt.lastOrder", JSON.stringify(result.order));
+      } catch {
+        // Private mode. The receipt falls back to a generic confirmation.
+      }
+
       clear();
-      window.location.href = result.redirectUrl;
+      window.location.href = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/checkout/result/`;
     });
   };
 
@@ -116,15 +121,15 @@ export function CheckoutForm({
 
       <h1 className="type-display text-4xl sm:text-5xl">تکمیل سفارش</h1>
 
-      {mockPayment && (
-        <p
-          className="type-utility mt-5 border border-line px-4 py-3 leading-relaxed"
-          style={{ borderRadius: "var(--radius)" }}
-          role="status"
-        >
-          حالت آزمایشی — پرداخت واقعی انجام نمی‌شود و هیچ مبلغی از حساب شما کم نمی‌شود.
-        </p>
-      )}
+      <p
+        className="type-utility mt-5 border border-line px-4 py-3 leading-relaxed"
+        style={{ borderRadius: "var(--radius)" }}
+        role="status"
+      >
+        {storeReady
+          ? "پرداخت آنلاین فعال نیست. سفارش شما ثبت می‌شود و برای هماهنگی پرداخت و ارسال با شما تماس می‌گیریم."
+          : "این نسخهٔ نمایشی است — هنوز دیتابیس وصل نشده و سفارش ثبت نمی‌شود."}
+      </p>
 
       <form onSubmit={handleSubmit} noValidate className="mt-8 grid gap-10 lg:grid-cols-[1fr_320px] lg:items-start">
         <div className="space-y-5">
@@ -246,8 +251,11 @@ export function CheckoutForm({
           )}
 
           <div className="mt-6">
+            {/* Left enabled even with no database attached: a disabled button
+                tells a visitor nothing, whereas submitting walks them through
+                the real validation and then says plainly why it stopped. */}
             <Button type="submit" disabled={pending}>
-              {pending ? "در حال انتقال…" : "پرداخت"}
+              {pending ? "در حال ثبت…" : "ثبت سفارش"}
             </Button>
           </div>
         </aside>

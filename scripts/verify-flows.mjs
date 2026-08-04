@@ -11,9 +11,9 @@
  */
 
 import { chromium } from "playwright-core";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 
-const BASE_URL = process.argv[2] ?? "http://127.0.0.1:3000";
+const BASE_URL = (process.argv[2] ?? "http://127.0.0.1:3000").replace(/\/$/, "");
 const OUT_DIR = ".verify/flows";
 const EXECUTABLE = "/opt/pw-browsers/chromium";
 
@@ -74,69 +74,60 @@ async function run() {
   await page.fill("#phone", "12345");
   await page.fill("#address", "کوتاه");
   await page.fill("#postal_code", "1");
-  await page.getByRole("button", { name: /پرداخت/ }).click();
+  await page.getByRole("button", { name: /ثبت سفارش/ }).click();
   await page.waitForTimeout(400);
 
   const alerts = await page.getByRole("alert").allInnerTexts();
   check(alerts.some((t) => t.includes("موبایل")), "invalid phone is rejected");
   check(alerts.some((t) => t.includes("کد پستی")), "invalid postal code is rejected");
-  check(!page.url().includes("gateway"), "invalid form does not reach the gateway");
   await page.screenshot({ path: `${OUT_DIR}/03-validation.png` });
 
-  // ── 4. Persian digits must be accepted ───────────────────────────────
+  // ── 4. Persian digits are accepted, and the order is attempted ───────
+  //
+  // Iranian keyboards emit ۰۹۱۲…, which no `\\d` pattern matches. If these are
+  // not normalised, correct input is rejected and the customer has no idea
+  // why — so this is the single most important validation case on the form.
   await page.fill("#name", "محمد مرغزاری");
   await page.fill("#phone", "۰۹۱۲۳۴۵۶۷۸۹");
   await page.fill("#address", "تهران، خیابان آزادی، پلاک ۱۲، واحد ۳");
   await page.fill("#postal_code", "۱۳۴۵۶۷۸۹۰۱");
   await page.screenshot({ path: `${OUT_DIR}/04-checkout-filled.png` });
 
-  await page.getByRole("button", { name: /پرداخت/ }).click();
-  await page.waitForURL(/\/checkout\/gateway/, { timeout: 20000 });
-  check(true, "Persian digits accepted; reached the gateway");
-  await page.screenshot({ path: `${OUT_DIR}/05-gateway.png` });
+  await page.getByRole("button", { name: /ثبت سفارش/ }).click();
+  await page.waitForTimeout(1200);
 
-  // ── 5. Pay, land on the receipt ──────────────────────────────────────
-  await page.getByRole("link", { name: "پرداخت موفق" }).click();
-  await page.waitForURL(/\/checkout\/result/, { timeout: 20000 });
+  const afterSubmit = await page.locator("main").innerText();
+  const reachedReceipt = page.url().includes("/checkout/result");
+  const saysNeedsDatabase = afterSubmit.includes("دیتابیس");
 
-  const receipt = await page.locator("main").innerText();
-  check(receipt.includes("پرداخت انجام شد"), "payment settles and shows the receipt");
-  check(/MK-[0-9A-Z]{6}/.test(receipt), "order number is shown");
-  check(receipt.includes("شمارهٔ پیگیری"), "gateway reference is shown");
+  // Persian digits passed client validation either way; what happens next
+  // depends on whether a database is attached to this build.
+  check(
+    reachedReceipt || saysNeedsDatabase,
+    "Persian digits accepted — order placed, or database absence reported clearly",
+  );
+  check(
+    !afterSubmit.includes("موبایل باید") && !afterSubmit.includes("کد پستی باید"),
+    "Persian digits are not mistaken for invalid input",
+  );
+  await page.screenshot({ path: `${OUT_DIR}/05-submit.png` });
+
+  // ── 5. Receipt page is safe to open directly ─────────────────────────
+  //
+  // It reads the confirmation out of sessionStorage, so opening it cold must
+  // degrade to an explanation rather than inventing an order.
+  await page.goto(`${BASE_URL}/checkout/result`, { waitUntil: "load" });
+  await page.waitForTimeout(500);
+  const receiptCold = await page.locator("main").innerText();
+  check(
+    receiptCold.includes("سفارشی پیدا نشد") || receiptCold.includes("سفارش ثبت شد"),
+    "receipt page handles being opened without an order",
+  );
+  check(
+    !receiptCold.includes("undefined") && !receiptCold.includes("NaN"),
+    "receipt never renders placeholder junk",
+  );
   await page.screenshot({ path: `${OUT_DIR}/06-receipt.png` });
-
-  const resultUrl = page.url();
-
-  // ── 6. Idempotency — refreshing the receipt must not re-settle ───────
-  await page.reload({ waitUntil: "load" });
-  await page.waitForTimeout(300);
-  const afterReload = await page.locator("main").innerText();
-  check(afterReload.includes("پرداخت انجام شد"), "refreshing the receipt still shows paid");
-
-  // Replay the raw callback, exactly as a retried gateway request would.
-  const orderId = new URL(resultUrl).searchParams.get("order");
-  const replay = await page.goto(
-    `${BASE_URL}/api/payment/verify?order=${orderId}&Authority=REPLAY&Status=OK`,
-    { waitUntil: "load" },
-  );
-  check(
-    (replay?.status() ?? 500) < 400 && page.url().includes("state=paid"),
-    "replayed callback stays paid instead of failing or double-settling",
-  );
-
-  const replayText = await page.locator("main").innerText();
-  check(
-    replayText.includes("پرداخت انجام شد"),
-    "replayed callback does not corrupt the order status",
-  );
-
-  // ── 7. Cart is empty after a completed purchase ──────────────────────
-  await page.goto(`${BASE_URL}/cart`, { waitUntil: "load" });
-  await page.waitForTimeout(400);
-  check(
-    (await page.locator("main").innerText()).includes("سبد خالی است"),
-    "cart is cleared after checkout",
-  );
 
   // ── 8. Admin behaves correctly for the current configuration ─────────
   //
@@ -188,9 +179,15 @@ async function run() {
 
   const missing = await page.goto(`${BASE_URL}/product/does-not-exist`, { waitUntil: "load" });
   check((missing?.status() ?? 200) === 404, "unknown product returns 404");
+
+  // The body of a 404 comes from the host, not the app: GitHub Pages serves
+  // the exported 404.html, while a bare local file server returns its own
+  // stub. So the designed page is verified as an artifact rather than through
+  // whatever this particular server chose to render.
+  const notFoundHtml = await readFile("out/404.html", "utf8").catch(() => "");
   check(
-    (await page.locator("body").innerText()).includes("پیدا نشد"),
-    "404 renders the designed page, not a blank one",
+    notFoundHtml.includes("پیدا نشد") && notFoundHtml.includes("بازگشت به خانه"),
+    "exported 404.html is the designed page, not a blank one",
   );
 
   // ── 9. Nothing broken along the way ──────────────────────────────────

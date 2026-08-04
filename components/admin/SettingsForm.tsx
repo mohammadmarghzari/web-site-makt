@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { SiteSettings } from "@/lib/types";
-import { saveSettings } from "@/app/admin/actions";
+import { saveSettings } from "@/lib/admin/mutations";
 import { ImageUploader } from "./ImageUploader";
 import { Field, inputClass } from "@/components/ui/Field";
 import { Bracket } from "@/components/ui/Bracket";

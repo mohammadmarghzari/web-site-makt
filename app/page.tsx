@@ -17,7 +17,6 @@ import { getSettings } from "@/lib/repo/settings";
  * once it is configured, and the admin panel calls revalidatePath on every
  * change, so edits appear immediately without a query on every visit.
  */
-export const revalidate = 60;
 
 /*
  * The three acts.

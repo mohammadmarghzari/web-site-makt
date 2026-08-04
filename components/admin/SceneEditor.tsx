@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { HeroScene } from "@/lib/types";
-import { saveScene } from "@/app/admin/actions";
+import { saveScene } from "@/lib/admin/mutations";
 import { ImageUploader } from "./ImageUploader";
 import { ScenePreview } from "./ScenePreview";
 import { Field, inputClass } from "@/components/ui/Field";
