@@ -138,17 +138,78 @@ async function run() {
     "cart is cleared after checkout",
   );
 
-  // ── 8. Admin is protected ────────────────────────────────────────────
-  await page.goto(`${BASE_URL}/admin`, { waitUntil: "load" });
+  // ── 8. Admin behaves correctly for the current configuration ─────────
+  //
+  // With Supabase configured, the proxy bounces anonymous visitors to the
+  // login page. Without it there is no auth to bounce to, so the panel must
+  // instead explain how to connect a database — sending someone to a login
+  // form they cannot possibly use would be a dead end. Both are correct; which
+  // one applies depends on the environment, so accept either and reject the
+  // states that would indicate a real bug (a crash, or an unguarded panel).
+  const adminResponse = await page.goto(`${BASE_URL}/admin`, { waitUntil: "load" });
   await page.waitForTimeout(300);
-  check(page.url().includes("/admin/login"), "admin redirects anonymous visitors to login");
-  await page.screenshot({ path: `${OUT_DIR}/07-admin-login.png` });
+  const adminText = await page.locator("body").innerText();
+  const redirectedToLogin = page.url().includes("/admin/login");
+  const explainsSetup = adminText.includes("دیتابیس هنوز وصل نشده");
+
+  check((adminResponse?.status() ?? 500) < 400, "admin route responds without an error");
+  check(
+    redirectedToLogin || explainsSetup,
+    "admin is either gated by login or explains it is not configured",
+  );
+  check(
+    !adminText.includes("افزودن محصول"),
+    "admin never exposes editing tools to an anonymous visitor",
+  );
+  await page.screenshot({ path: `${OUT_DIR}/07-admin.png` });
+
+  // The panel must never be indexable, in either state.
+  const robotsMeta = await page
+    .locator('meta[name="robots"]')
+    .getAttribute("content")
+    .catch(() => null);
+  check(
+    robotsMeta === null || robotsMeta.includes("noindex"),
+    "admin is not indexable",
+  );
+
+  // ── 8b. SEO surfaces exist ───────────────────────────────────────────
+  const robotsTxt = await page.goto(`${BASE_URL}/robots.txt`, { waitUntil: "load" });
+  const robotsBody = (await robotsTxt?.text()) ?? "";
+  check(robotsBody.includes("Disallow: /admin"), "robots.txt blocks the admin panel");
+
+  const sitemap = await page.goto(`${BASE_URL}/sitemap.xml`, { waitUntil: "load" });
+  const sitemapBody = (await sitemap?.text()) ?? "";
+  check(sitemapBody.includes("/product/arash"), "sitemap lists products");
+  check(!sitemapBody.includes("/checkout"), "sitemap excludes checkout");
+
+  const og = await page.goto(`${BASE_URL}/opengraph-image.png`, { waitUntil: "load" });
+  check((og?.status() ?? 500) === 200, "opengraph image is served");
+
+  const missing = await page.goto(`${BASE_URL}/product/does-not-exist`, { waitUntil: "load" });
+  check((missing?.status() ?? 200) === 404, "unknown product returns 404");
+  check(
+    (await page.locator("body").innerText()).includes("پیدا نشد"),
+    "404 renders the designed page, not a blank one",
+  );
 
   // ── 9. Nothing broken along the way ──────────────────────────────────
-  const realBad = badResponses.filter((r) => !r.includes("favicon"));
-  check(consoleErrors.length === 0, `no console errors (saw ${consoleErrors.length})`);
-  check(realBad.length === 0, `no failed requests (saw ${realBad.length})`);
-  if (consoleErrors.length) notes.push(`    ${consoleErrors.slice(0, 3).join("\n    ")}`);
+  //
+  // The 404 probe above is deliberate, so its response and the console message
+  // the browser logs for it are expected — counting them would mean this check
+  // could never pass.
+  const isIntentional = (entry) =>
+    entry.includes("favicon") || entry.includes("does-not-exist");
+  const realBad = badResponses.filter((r) => !isIntentional(r));
+  const realConsoleErrors = consoleErrors.filter(
+    (e) => !e.includes("404") && !e.includes("Failed to load resource"),
+  );
+  check(
+    realConsoleErrors.length === 0,
+    `no console errors (saw ${realConsoleErrors.length})`,
+  );
+  check(realBad.length === 0, `no unexpected failed requests (saw ${realBad.length})`);
+  if (realConsoleErrors.length) notes.push(`    ${realConsoleErrors.slice(0, 3).join("\n    ")}`);
   if (realBad.length) notes.push(`    ${realBad.slice(0, 5).join("\n    ")}`);
 
   await context.close();
