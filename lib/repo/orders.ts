@@ -16,12 +16,20 @@ import type { Order, OrderCustomer, OrderItem, OrderStatus } from "@/lib/types";
 /**
  * Non-persistent fallback store.
  *
- * ⚠️ This lives in the module scope of a single server process. It is wiped on
- * restart and is not shared between serverless instances, so an order created
- * by one invocation may be invisible to the next. It exists to keep the flow
- * testable before a database is attached — never as a production store.
+ * Held on `globalThis` rather than in module scope on purpose: the bundler
+ * gives each route its own copy of a module, so a plain `const` map would mean
+ * the Server Action that creates an order and the route handler that settles
+ * it were writing to two different maps — and every payment would come back
+ * "order not found".
+ *
+ * ⚠️ Still only good for one server process. It is wiped on restart and is not
+ * shared between serverless instances. It exists so the checkout and payment
+ * flow stays exercisable before a database is attached — never as a real store.
  */
-const memoryOrders = new Map<string, Order>();
+const globalStore = globalThis as typeof globalThis & {
+  __maktOrders?: Map<string, Order>;
+};
+const memoryOrders: Map<string, Order> = (globalStore.__maktOrders ??= new Map());
 
 /** Crockford-ish base32, minus vowels, so a reference can be read aloud. */
 const ALPHABET = "0123456789BCDFGHJKLMNPQRSTVWXYZ";

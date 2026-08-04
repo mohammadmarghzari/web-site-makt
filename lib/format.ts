@@ -27,6 +27,23 @@ export function formatToman(value: number): string {
 }
 
 /**
+ * Converts Persian (۰-۹) and Arabic-Indic (٠-٩) digits to ASCII.
+ *
+ * Iranian keyboards produce Persian digits, so a phone number or postal code
+ * typed naturally will not match a `\d` pattern. Every numeric form field is
+ * normalised through this before validation — without it, correct input gets
+ * rejected and the customer has no idea why.
+ */
+export function toLatinDigits(input: string): string {
+  return input.replace(/[۰-۹٠-٩]/g, (char) => {
+    const code = char.charCodeAt(0);
+    // Persian ۰ is U+06F0, Arabic-Indic ٠ is U+0660.
+    const base = code >= 0x06f0 ? 0x06f0 : 0x0660;
+    return String(code - base);
+  });
+}
+
+/**
  * Discount percentage, rounded down so the badge never overstates the saving.
  * Returns null when there is nothing to advertise.
  */
