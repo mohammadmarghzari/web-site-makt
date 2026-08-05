@@ -56,11 +56,20 @@ export function SmoothScroll({ children }: { children: ReactNode }) {
     }
 
     const lenis = new Lenis({
-      duration: 1.2,
-      // Exponential ease-out: fast to respond, long tail. This is what gives
-      // the transitions their weight without feeling laggy to input.
+      // Longer glide than the usual 1.2. The acts are full-viewport panels, and
+      // a short settle makes a whole screen of content arrive abruptly; the
+      // extra weight is what the transitions are trading on.
+      duration: 1.6,
+      // Exponential ease-out: immediate response to input, long soft tail.
       easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-      touchMultiplier: 1.6,
+      // Slightly under 1 so a single wheel notch or flick travels less and the
+      // act transitions are crossed deliberately rather than skipped past.
+      wheelMultiplier: 0.9,
+      touchMultiplier: 1.4,
+      // Cancelling inertia at the ends stops the rubber-band overshoot that
+      // reports scroll positions outside [0,1] and flickers the first and
+      // last act.
+      syncTouch: false,
       autoRaf: false,
     });
     lenisRef.current = lenis;
@@ -81,7 +90,9 @@ export function SmoothScroll({ children }: { children: ReactNode }) {
       scrollTo(target, options) {
         lenis.scrollTo(target as never, {
           immediate: options?.immediate ?? false,
-          duration: 1.4,
+          // A rail click crosses a whole act, so it is given longer than a
+          // wheel gesture — a jump this large at normal speed reads as a cut.
+          duration: 2.0,
         });
       },
     });

@@ -136,27 +136,73 @@ export function ScrollStage({ children }: { children: ReactNode }) {
   );
 }
 
+/** Smootherstep. Zero first *and* second derivative at both ends. */
+function ease(t: number): number {
+  const x = t < 0 ? 0 : t > 1 ? 1 : t;
+  return x * x * x * (x * (x * 6 - 15) + 10);
+}
+
+/** Rescales `value` from the range [from, to] onto [0, 1], clamped. */
+function remap(value: number, from: number, to: number): number {
+  return Math.max(0, Math.min(1, (value - from) / (to - from)));
+}
+
 /**
- * Maps an act's visibility (0 → 1) onto the crossfade treatment.
- *
- * The same mapping serves incoming and outgoing acts. An act leaving has
- * visibility falling 1 → 0; one arriving has it rising 0 → 1. Both therefore
- * pass through identical intermediate states, which is what makes the
- * transition read as a single crossfade rather than two animations that
- * happen to overlap.
+ * The point at which an act being covered may finally start disappearing.
+ * By here the act on top is ~99% opaque, so this fade is invisible — it exists
+ * only to stop an invisible layer from staying composited forever.
  */
-function useCrossfade(visibility: MotionValue<number>, blurMax: number, instant: boolean) {
-  // Under `prefers-reduced-motion` the crossfade collapses to a hard cut at the
-  // halfway point. Both acts read the same boundary value, so one reaches zero
-  // exactly as the other reaches one — no flash of the background between them.
-  const opacity = useTransform(visibility, (v) => (instant ? (v > 0.5 ? 1 : 0) : v));
-  const scale = useTransform(visibility, (v) => (instant ? 1 : 1 + 0.06 * (1 - v)));
-  const filter = useTransform(visibility, (v) =>
-    blurMax === 0 || instant ? "none" : `blur(${((1 - v) * blurMax).toFixed(2)}px)`,
+const HANDOVER = 0.88;
+
+/**
+ * Turns an act's position in the transition into its visual treatment.
+ *
+ * ── Why the outgoing act does not fade ────────────────────────────────────
+ * Acts are stacked, with each one painted *over* its predecessor. If both
+ * fade linearly, the midpoint has each at 50% and the composite works out to
+ * 0.5 + 0.5×0.5 = 0.75 — a quarter of the page background shows straight
+ * through, which reads as a wash-out or a flicker exactly where the motion
+ * should feel most continuous.
+ *
+ * So only the incoming act animates its opacity. It dissolves in on top of a
+ * predecessor that stays fully opaque underneath, and the composite never
+ * drops below 1. The outgoing act still scales and blurs, so it visibly
+ * recedes — it just never lets the background through.
+ *
+ * `presence` is how far this act has arrived; `covered` is how far the act
+ * above has taken over. Both are pure functions of scroll, so the whole
+ * transition still reverses exactly.
+ */
+function useCrossfade(
+  presence: MotionValue<number>,
+  covered: MotionValue<number>,
+  blurMax: number,
+  instant: boolean,
+) {
+  const inputs = [presence, covered] as MotionValue<number>[];
+
+  // Reduced motion: a clean cut at the handover point. Both acts read the same
+  // boundary value, so one vanishes exactly as the other lands.
+  const opacity = useTransform(inputs, ([p, c]: number[]) => {
+    if (instant) return p > 0.5 && c <= 0.5 ? 1 : 0;
+    return ease(p) * (1 - ease(remap(c, HANDOVER, 1)));
+  });
+
+  // An act recedes both while arriving and while being covered, so the larger
+  // of the two drives the effect.
+  const recede = useTransform(inputs, ([p, c]: number[]) => Math.max(1 - p, c));
+
+  const scale = useTransform(recede, (r) => (instant ? 1 : 1 + 0.06 * r));
+  const filter = useTransform(recede, (r) =>
+    blurMax === 0 || instant ? "none" : `blur(${(r * blurMax).toFixed(2)}px)`,
   );
-  // An act at zero opacity still occupies the viewport because of the overlap
-  // margins, so it must not intercept clicks meant for the act beneath it.
-  const pointerEvents = useTransform(visibility, (v) => (v > 0.02 ? "auto" : "none"));
+
+  // An act keeps its box even at zero opacity because of the overlap margins,
+  // so anything covered must stop intercepting clicks meant for the act above.
+  const pointerEvents = useTransform(inputs, ([p, c]: number[]) =>
+    p > 0.5 && c < 0.5 ? "auto" : "none",
+  );
+
   return { opacity, scale, filter, pointerEvents };
 }
 
@@ -180,16 +226,13 @@ function useActWiring(index: number, ref: RefObject<HTMLElement | null>) {
   });
 
   const next = entries[index + 1] as MotionValue<number> | undefined;
-  const nextEntry = next ?? null;
 
-  // visibility = how far in this act is, minus how far the next act has taken over.
-  const visibility = useTransform(
-    // Depending on both values keeps the derived value live for either input.
-    [entry, nextEntry ?? entry] as MotionValue<number>[],
-    ([mine, theirs]: number[]) => (nextEntry ? mine * (1 - theirs) : mine),
-  );
+  // The last act is never covered, so it needs a value that stays at zero
+  // rather than a missing one — the transform below always reads both.
+  const zero = useMotionValue(0);
+  const covered = next ?? zero;
 
-  return { visibility, entry };
+  return { presence: entry, covered, entry };
 }
 
 export interface StickyActProps {
@@ -207,11 +250,11 @@ export interface StickyActProps {
 
 export function StickyAct({ index, id, length, children }: StickyActProps) {
   const wrapperRef = useRef<HTMLElement>(null);
-  const { visibility, entry } = useActWiring(index, wrapperRef);
+  const { presence, covered, entry } = useActWiring(index, wrapperRef);
   const reduceEffects = useReducedEffects();
   const reducedMotion = usePrefersReducedMotion();
   const blurMax = reduceEffects ? 0 : 8;
-  const { opacity, scale, filter, pointerEvents } = useCrossfade(visibility, blurMax, reducedMotion);
+  const { opacity, scale, filter, pointerEvents } = useCrossfade(presence, covered, blurMax, reducedMotion);
 
   const isLast = index === ACT_COUNT - 1;
 
@@ -283,13 +326,13 @@ export interface FlowActProps {
  */
 export function FlowAct({ index, id, children }: FlowActProps) {
   const ref = useRef<HTMLElement>(null);
-  const { visibility } = useActWiring(index, ref);
+  const { presence, covered } = useActWiring(index, ref);
   const reduceEffects = useReducedEffects();
   const reducedMotion = usePrefersReducedMotion();
   // A full-width grid is a large surface; blur across it costs far more than
   // over a single hero panel, so it is capped well below the hero's 8px.
   const blurMax = reduceEffects ? 0 : 4;
-  const { opacity, scale, filter, pointerEvents } = useCrossfade(visibility, blurMax, reducedMotion);
+  const { opacity, scale, filter, pointerEvents } = useCrossfade(presence, covered, blurMax, reducedMotion);
 
   return (
     <section
